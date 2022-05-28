@@ -1,12 +1,12 @@
 #! /bin/bash
 
-gpu=true
+gpu=false
 rebuild=true
 # port should be unique for every user
 uniq_port='17957'
-container_name="tf_sensor_gpu3"
-project_name='tf_sensor_gpu2'
-key_dir='projects'
+container_name="tf_sensor_cpu2"
+project_name='tf_sensor_cpu2'
+key_dir=''
 # in home directory shoud exist
 # .ssh
 # .aws
@@ -53,7 +53,7 @@ else
         docker pull ${image_name}
     fi
     docker run  --name "${container_name}" --user root -e GRANT_SUDO=yes \
-     -p "${uniq_port}:8888" \
+     -p "${uniq_port}:8888" -p $(( ${uniq_port} + 1 )):6006 \
      -v ~/${dir}:/home/jovyan \
      "${image_name}"
 fi
