@@ -171,7 +171,7 @@ RUN set -x && \
     fix-permissions "/home/${NB_USER}"
 
 EXPOSE 8888
-
+EXPOSE 6006
 # Configure container startup
 ENTRYPOINT ["tini", "-g", "--"]
 CMD ["start-notebook.sh"]
