@@ -1,5 +1,0 @@
-#! bin/bash
-
-docker run -p 23:22 -d --gpus-all NOTE: MOFED driver for multi-node communication was not detected.
-      Multi-node communication performance may be reduced.
- --name isaac korbash/isaacgym:0.0
