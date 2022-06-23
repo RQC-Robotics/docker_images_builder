@@ -41,7 +41,7 @@ if ${gpu}; then
     fi
     docker run  --name "${container_name}" --user root -e GRANT_SUDO=yes \
      --gpus all \
-     -p "${uniq_port}:8888" -p 17956:6006 \
+     -p "${uniq_port}:8888" -p $(( ${uniq_port} + 1 )):6006 \
      -v ~/${dir}:/home/jovyan \
      "${image_name}"
 
