@@ -20,9 +20,7 @@ RUN apt-get update \
  pigz \
  git \
  libegl1 \
- git-lfs \
- python3-pip \
- sudo
+ git-lfs
 
 # Force gcc 8 to avoid CUDA 10 build issues on newer base OS
 RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-8 8
@@ -38,11 +36,8 @@ COPY docker/10_nvidia.json /usr/share/glvnd/egl_vendor.d/10_nvidia.json
 WORKDIR /opt/isaacgym
 
 RUN useradd --create-home gymuser
-RUN adduser gymuser sudo \
- && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 USER gymuser
 
-RUN alias python=python3
 # copy gym repo to docker
 COPY --chown=gymuser . .
 

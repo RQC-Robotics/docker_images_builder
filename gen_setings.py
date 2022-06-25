@@ -20,12 +20,14 @@ def base():
     ssh = {'install': False}
     conda = {'install': False}
     github = {'install': False}
+    version = '3.3'
     user = {
         'name': 'robot',
         'UID': 1000,
         'GID': 100,
         'sudo': True,
-        'password': 'robot'
+        'password': 'robot',
+        'time_zone': 'Europe/Moscow'
     }
     user['home'] = Path('/home') / user['name']
     image = {
@@ -35,11 +37,12 @@ def base():
         'base': 'ubuntu:18.04',
         'cont_name': None
     }
+    var = {}
     packages = ['git', 'build-essential', 'nano']
     sec = ['.ssh', '.aws', '.gitconfig']
-    project = {'rewrite': False, 'del_exist_pr': False}
+    project = {'rewrite': True, 'del_exist_pr': False}
     start_compose = {'install': True, 'reinstall': True}
-    use_gpu = False
+    use_gpu = True
 
 
 @ex.named_config
@@ -48,8 +51,8 @@ def ssh():
 
 
 @ex.named_config
-def conda():
-    conda = {'install': True, 'base': True, 'version': 'latest'}
+def conda(user):
+    conda = {'install': True, 'base': True, 'version': 'latest', 'path': user['home'] / 'miniconda'}
 
 
 @ex.named_config
@@ -83,13 +86,19 @@ def sensor(use_gpu):
 
 
 @ex.named_config
-def isaac(use_gpu, sec):
+def isaac(use_gpu, packages, conda, user):
     if not use_gpu:
         log.error('isaac gym mast have GPU axes')
         exit()
-    sec += ['src/isaacgym']
+    var = {'LD_LIBRARY_PATH': [str(conda['path']) + '/envs/rlgpu/lib',
+    str(user['home']) + '/src/isaacgym/python/isaacgym/_bindings/linux-x86_64/']} # if use isaac with defalt conda env 
+    packages += ['libxcursor-dev', 'libxrandr-dev', 'libxinerama-dev', 'libxi-dev',
+    'mesa-common-dev', 'zip', 'unzip', 'make', 'gcc-8', 'g++-8', 'vulkan-utils',
+    'mesa-vulkan-drivers', 'pigz', 'git', 'libegl1', 'git-lfs']
+    # sec += ['src/isaacgym']
+    version = '2.3'
     image = {
-        'base': 'nvidia/cuda:11.2.1-cudnn8-runtime-ubuntu20.04',
+        'base': 'nvidia/cuda:10.2-runtime-ubuntu18.04',
         'name': 'isaacgym'
     }
     github = {'repo': 'isaacGym'}
@@ -134,12 +143,12 @@ def create_project_dir(d, project, sec, user):
             if src.is_file():
                 if dest.exists() and project['rewrite']:
                     dest.unlink()
-                elif not dest.exists():
+                if not dest.exists():
                     copy2(src, dest)
             else:
                 if dest.exists() and project['rewrite']:
                     rmtree(dest)
-                elif not dest.exists():
+                if not dest.exists():
                     copytree(src, dest)
             # d.COPY = f + ' ' + str(user['home'] / f)
         except FileNotFoundError as exc:
@@ -149,7 +158,9 @@ def create_project_dir(d, project, sec, user):
 
 
 @ex.capture(prefix='user')
-def add_user(d, name, password, UID, GID, sudo, home):
+def add_user(d, name, password, UID, GID, sudo, home, time_zone):
+    d.ENV = 'TZ=' + time_zone + ' DEBIAN_FRONTEND=noninteractive'
+    d.RUN = 'ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone'
     d.RUN = gen_bash({
         'adduser': name,
         '--disabled-password': '',
@@ -159,7 +170,7 @@ def add_user(d, name, password, UID, GID, sudo, home):
     })
     d.RUN = "echo '%s:%s' | chpasswd" % (name, password)
     if sudo:
-        d.RUN = "apt-get update && apt-get install -y sudo"
+        d.RUN = "apt update && apt install -y sudo"
         d.RUN = "echo '%s ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers" % name
     d.USER = name
     d.WORKDIR = str(home / 'project')
@@ -168,24 +179,26 @@ def add_user(d, name, password, UID, GID, sudo, home):
 
 
 @ex.capture
-def install_pac(d, packages):
-    d.RUN = 'sudo apt-get update && sudo apt-get install -y ' + ' '.join(
+def install_pac_var(d, packages, var):
+    d.RUN = 'sudo apt update && sudo apt install -y ' + ' '.join(
         map(str, packages))
+    st = '\n'.join(map(lambda x: 'export %s=%s' % (x,':'.join(var[x])), var))
+    d.RUN = "echo '%s' >> ~/.profile" % st
 
 
 @ex.capture(prefix='ssh')
 def install_ssh(d, port_in):
-    d.RUN = 'sudo apt-get update && sudo apt-get install -y openssh-server'
+    d.RUN = 'sudo apt update && sudo apt install -y openssh-server'
     d.RUN = 'sudo service ssh start'
     d.EXPOSE = port_in
     d.ENTRYPOINT = ['sudo', '/usr/sbin/sshd', '-D']
 
 
 @ex.capture(prefix='conda')
-def install_conda(d, version, base):
+def install_conda(d, version, base, path):
     d.RUN = 'wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-' + version + '-Linux-x86_64.sh -O ~/miniconda.sh'
-    d.RUN = 'chmod +x ~/miniconda.sh && ~/miniconda.sh -b -p ~/miniconda && rm ~/miniconda.sh'
-    d.RUN = "echo '. ~/miniconda/etc/profile.d/conda.sh' >> ~/.profile"
+    d.RUN = 'chmod +x ~/miniconda.sh && ~/miniconda.sh -b -p %s && rm ~/miniconda.sh' % str(path)
+    d.RUN = "echo '. %s/etc/profile.d/conda.sh' >> ~/.profile" % str(path)
     if base:
         d.RUN = '. ~/.profile && conda init bash'
 
@@ -218,7 +231,7 @@ def clone_instal_repo(d, github, conda):
 
 
 @ex.capture()
-def create_docker_compose_yaml(ports, image, use_gpu, user, host_name):
+def create_docker_compose_yaml(ports, image, use_gpu, user, host_name, version):
     hp = Path('.')
     cp = Path(user['home'])
     volumes = []
@@ -246,7 +259,7 @@ def create_docker_compose_yaml(ports, image, use_gpu, user, host_name):
     if use_gpu:
         build['runtime'] = 'nvidia'
 
-    compose = {'version': '3', 'services': {image['name']: build}}
+    compose = {'version': version, 'services': {image['name']: build}}
     with open('docker-compose.yaml', 'w') as f:
         yaml.dump(compose, f)
 
@@ -271,7 +284,7 @@ def my_main(image, ssh, conda, github, start_compose):
     d = pydocker.DockerFile(base_img=image['base'], name=image['full_name'])
     add_user(d)
     create_project_dir(d)
-    install_pac(d)
+    install_pac_var(d)
     if ssh['install']:
         install_ssh(d)
         ports[ssh['port_out']] = ssh['port_in']
